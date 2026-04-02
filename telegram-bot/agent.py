@@ -63,10 +63,15 @@ You have access to the following tools:
 # ---------------------------------------------------------------------------
 
 class ConversationHistory:
-    """Per-user message history with automatic trimming."""
+    """Per-user message history with automatic trimming.
 
-    def __init__(self, max_turns: int = 20):
-        self._max_turns = max_turns
+    `max_user_turns` is the number of user-assistant turn *pairs* to retain.
+    Internally we allow up to `max_user_turns * 4` raw messages to account
+    for tool call / tool result messages that sit between turns.
+    """
+
+    def __init__(self, max_user_turns: int = 20):
+        self._max_user_turns = max_user_turns
         self._store: dict[int, list[dict]] = {}
 
     def get(self, user_id: int) -> list[dict]:
@@ -75,11 +80,9 @@ class ConversationHistory:
     def append(self, user_id: int, message: dict) -> None:
         history = self._store.setdefault(user_id, [])
         history.append(message)
-        # Keep only recent turns (each turn = user + assistant, possibly tool msgs)
-        # A "turn" is loosely ~3 messages; we cap total messages.
-        max_messages = self._max_turns * 4
+        # Each turn = user msg + assistant msg + tool calls/results (~4 messages)
+        max_messages = self._max_user_turns * 4
         if len(history) > max_messages:
-            # Drop oldest messages but preserve the alternating structure
             self._store[user_id] = history[-max_messages:]
 
     def clear(self, user_id: int) -> None:
@@ -98,7 +101,7 @@ class ConversationHistory:
         return self._models.get(user_id, config.default_model)
 
 
-history = ConversationHistory(max_turns=config.max_history_turns)
+history = ConversationHistory(max_user_turns=config.max_history_turns)
 
 
 # ---------------------------------------------------------------------------

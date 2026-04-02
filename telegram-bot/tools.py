@@ -15,6 +15,7 @@ Available tools
 
 from __future__ import annotations
 
+import ast
 import json
 import math
 import urllib.parse
@@ -250,21 +251,71 @@ def tool_get_current_time() -> dict[str, Any]:
     }
 
 
+_ALLOWED_CALC_NAMES: dict[str, Any] = {
+    name: getattr(math, name)
+    for name in (
+        "sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "log", "log2", "log10", "exp", "pow", "floor", "ceil", "factorial",
+        "gcd", "pi", "e", "tau", "inf",
+    )
+}
+_ALLOWED_CALC_NAMES.update({"abs": abs, "round": round, "min": min, "max": max})
+
+# Operators allowed in the AST-based evaluator
+_BINOP_MAP = {
+    ast.Add: lambda a, b: a + b,
+    ast.Sub: lambda a, b: a - b,
+    ast.Mult: lambda a, b: a * b,
+    ast.Div: lambda a, b: a / b,
+    ast.Pow: lambda a, b: a ** b,
+    ast.Mod: lambda a, b: a % b,
+    ast.FloorDiv: lambda a, b: a // b,
+}
+_UNARYOP_MAP = {
+    ast.USub: lambda a: -a,
+    ast.UAdd: lambda a: +a,
+}
+
+
+def _eval_node(node: ast.AST) -> float | int:
+    """Recursively evaluate a safe subset of Python AST nodes."""
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id not in _ALLOWED_CALC_NAMES:
+            raise ValueError(f"Name '{node.id}' is not allowed")
+        return _ALLOWED_CALC_NAMES[node.id]
+    if isinstance(node, ast.BinOp):
+        op_type = type(node.op)
+        if op_type not in _BINOP_MAP:
+            raise ValueError(f"Binary operator {op_type.__name__} is not allowed")
+        left = _eval_node(node.left)
+        right = _eval_node(node.right)
+        return _BINOP_MAP[op_type](left, right)
+    if isinstance(node, ast.UnaryOp):
+        op_type = type(node.op)
+        if op_type not in _UNARYOP_MAP:
+            raise ValueError(f"Unary operator {op_type.__name__} is not allowed")
+        return _UNARYOP_MAP[op_type](_eval_node(node.operand))
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("Only named function calls are allowed")
+        func_name = node.func.id
+        if func_name not in _ALLOWED_CALC_NAMES:
+            raise ValueError(f"Function '{func_name}' is not allowed")
+        func = _ALLOWED_CALC_NAMES[func_name]
+        args = [_eval_node(arg) for arg in node.args]
+        return func(*args)
+    raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
+
 def tool_calculate(expression: str) -> dict[str, Any]:
-    """Safely evaluate a math expression."""
-    allowed_names = {
-        k: v
-        for k, v in math.__dict__.items()
-        if not k.startswith("_")
-    }
-    allowed_names.update({"abs": abs, "round": round})
+    """Safely evaluate a math expression using AST parsing (no eval)."""
     try:
-        # Only allow names from math + literals; no builtins beyond what we list
-        result = eval(  # noqa: S307
-            expression,
-            {"__builtins__": {}},
-            allowed_names,
-        )
+        tree = ast.parse(expression.strip(), mode="eval")
+        result = _eval_node(tree)
         return {"result": result, "expression": expression}
     except Exception as exc:
         return {"error": str(exc), "expression": expression}
