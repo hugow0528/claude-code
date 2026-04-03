@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8443:8443"
+    # Optional: mount a volume if you want persistent logs
+    # volumes:
+    #   - ./logs:/app/logs
