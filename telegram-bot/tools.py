@@ -158,6 +158,34 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_code_project",
+            "description": (
+                "Generate a complete, working software project and upload it to GitHub. "
+                "Use this when the user asks to: write/create/build/code a program, app, "
+                "script, API, website, bot, tool, or any software project. "
+                "The agent will generate ALL files needed (code, dependencies, README) "
+                "and commit them to GitHub as a single atomic upload. "
+                "Returns the GitHub URL where the code can be viewed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": (
+                            "Full description of the software project to build. "
+                            "Include: what it should do, the language/framework if specified, "
+                            "any specific features or requirements."
+                        ),
+                    },
+                },
+                "required": ["task"],
+            },
+        },
+    },
 ]
 
 
@@ -325,6 +353,74 @@ def tool_calculate(expression: str) -> dict[str, Any]:
 # Dispatcher — called by the agent loop
 # ---------------------------------------------------------------------------
 
+async def tool_write_code_project(task: str) -> dict[str, Any]:
+    """
+    Full coding agent pipeline:
+      1. Generate a complete project via the coding agent (AI call)
+      2. Upload to GitHub if configured, otherwise return files inline
+
+    Called by the agentic loop via dispatch_tool().
+    The bot.py /code command calls the coding_agent and github_upload modules
+    directly for better UX (status updates), but this function lets the
+    general agentic loop trigger coding too.
+    """
+    # Import here to avoid circular imports at module load time
+    from coding_agent import run_coding_agent
+    from github_upload import upload_project_to_github
+
+    coding_result = await run_coding_agent(task)
+    if not coding_result.ok:
+        return {"error": coding_result.error}
+
+    files_for_upload = [
+        {"path": f.path, "content": f.content}
+        for f in coding_result.files
+    ]
+
+    if config.github_token and config.github_repo:
+        upload_result = await upload_project_to_github(
+            project_name=coding_result.project_name,
+            files=files_for_upload,
+            description=coding_result.description,
+        )
+        if "error" in upload_result:
+            # GitHub upload failed — return code summary without URL
+            return {
+                "project_name": coding_result.project_name,
+                "description": coding_result.description,
+                "tech_stack": coding_result.tech_stack,
+                "files_count": len(coding_result.files),
+                "file_list": [f.path for f in coding_result.files],
+                "run_instructions": coding_result.run_instructions,
+                "github_upload_error": upload_result["error"],
+            }
+        return {
+            "project_name": coding_result.project_name,
+            "description": coding_result.description,
+            "tech_stack": coding_result.tech_stack,
+            "files_count": len(coding_result.files),
+            "file_list": [f.path for f in coding_result.files],
+            "run_instructions": coding_result.run_instructions,
+            "github_url": upload_result["github_url"],
+            "commit_sha": upload_result.get("commit_sha", ""),
+        }
+    else:
+        # No GitHub configured — return project info so the agent can describe it
+        return {
+            "project_name": coding_result.project_name,
+            "description": coding_result.description,
+            "tech_stack": coding_result.tech_stack,
+            "files_count": len(coding_result.files),
+            "file_list": [f.path for f in coding_result.files],
+            "run_instructions": coding_result.run_instructions,
+            "note": (
+                "GitHub upload is not configured (GITHUB_TOKEN / GITHUB_REPO missing). "
+                "The code was generated but not uploaded. "
+                "Tell the user to configure GitHub or use the /code command to receive files directly."
+            ),
+        }
+
+
 async def dispatch_tool(name: str, arguments: str | dict) -> str:
     """
     Execute a tool by name and return its result as a JSON string.
@@ -350,6 +446,8 @@ async def dispatch_tool(name: str, arguments: str | dict) -> str:
         result = tool_get_current_time()
     elif name == "calculate":
         result = tool_calculate(**args)
+    elif name == "write_code_project":
+        result = await tool_write_code_project(**args)
     else:
         result = {"error": f"Unknown tool: {name}"}
 

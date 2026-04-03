@@ -23,6 +23,7 @@ import asyncio
 import logging
 import os
 from io import BytesIO
+from typing import Any
 
 from telegram import (
     BotCommand,
@@ -42,7 +43,9 @@ from telegram.ext import (
 )
 
 from agent import history, run_agent
+from coding_agent import run_coding_agent
 from config import config
+from github_upload import upload_project_to_github
 from tools import (
     tool_generate_image,
     tool_text_to_speech,
@@ -122,6 +125,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🔍 *Search the web* — for current information\n"
         "🔊 *Speak text aloud* — use /say or ask me to read something\n"
         "🧮 *Do calculations* — just type a maths problem\n"
+        "💻 *Write & deploy code* — use /code to generate a project & upload to GitHub\n"
         "💬 *Chat naturally* — with memory across this conversation\n\n"
         f"Current model: `{model}`\n"
         "Use /help to see all commands.\n"
@@ -140,10 +144,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/models — List all available models\n"
         "/image `<prompt>` — Generate an image\n"
         "/imagine `<prompt>` — Same as /image\n"
-        "/say `<text>` — Convert text to speech\n\n"
+        "/say `<text>` — Convert text to speech\n"
+        "/code `<description>` — Generate a project & upload to GitHub\n\n"
         "💡 *Tips*\n"
         "• Just chat naturally — I'll use tools when needed\n"
         "• Ask me to draw, search, calculate, or speak anything\n"
+        "• Ask me to *write/build/create* code — I'll use the coding agent\n"
         "• I remember context within your conversation\n"
         "• Use /clear to start a fresh conversation\n\n"
         "🤖 *Powered by* [Pollinations AI](https://pollinations.ai)"
@@ -301,6 +307,163 @@ async def cmd_say(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def cmd_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Coding agent — generates a complete software project and uploads to GitHub.
+
+    Usage: /code <description of what to build>
+
+    Workflow:
+      1. Run the coding agent (AI generates all project files)
+      2a. If GITHUB_TOKEN + GITHUB_REPO configured: upload to GitHub, return URL
+      2b. Otherwise: send each generated file as a Telegram document attachment
+    """
+    if not _is_allowed(update.effective_user.id):
+        return
+
+    task = " ".join(context.args) if context.args else ""
+    if not task:
+        github_status = (
+            "✅ GitHub upload configured"
+            if (config.github_token and config.github_repo)
+            else "⚠️ GitHub not configured (files will be sent here)"
+        )
+        await update.message.reply_text(
+            "💻 *Coding Agent*\n\n"
+            "Usage: `/code <description of what to build>`\n\n"
+            "*Examples:*\n"
+            "• `/code a Python Flask REST API for a todo list with SQLite`\n"
+            "• `/code a Node.js CLI tool that converts CSV to JSON`\n"
+            "• `/code a Telegram bot in Python that tells jokes`\n"
+            "• `/code a Go HTTP server that serves static files`\n\n"
+            f"GitHub: {github_status}\n\n"
+            f"Coding model: `{config.coding_model}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    status_msg = await update.message.reply_text("🤖 Analyzing your request…")
+
+    async def update_status(text: str) -> None:
+        try:
+            await status_msg.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            pass
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING
+        )
+
+    # Step 1: Generate the project
+    await update_status(f"⚙️ Generating project with `{config.coding_model}`…\n_(this may take 30–60 seconds)_")
+    coding_result = await run_coding_agent(task, status_callback=update_status)
+
+    if not coding_result.ok:
+        await status_msg.delete()
+        await update.message.reply_text(
+            f"❌ *Code generation failed*\n\n{coding_result.error}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    files_summary = "\n".join(
+        f"• `{f.path}`" for f in coding_result.files
+    )
+    tech = ", ".join(coding_result.tech_stack) if coding_result.tech_stack else "N/A"
+
+    # Step 2a: Upload to GitHub if configured
+    if config.github_token and config.github_repo:
+        await update_status(
+            f"📁 *{coding_result.project_name}* — {len(coding_result.files)} files generated\n"
+            f"📤 Uploading to GitHub…"
+        )
+
+        files_for_upload = [
+            {"path": f.path, "content": f.content}
+            for f in coding_result.files
+        ]
+        upload_result = await upload_project_to_github(
+            project_name=coding_result.project_name,
+            files=files_for_upload,
+            description=coding_result.description,
+        )
+        await status_msg.delete()
+
+        if "error" in upload_result:
+            await update.message.reply_text(
+                f"⚠️ *Project generated but GitHub upload failed*\n\n"
+                f"Error: {upload_result['error']}\n\n"
+                f"Sending files directly instead…",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            await _send_files_as_documents(update, context, coding_result)
+        else:
+            github_url = upload_result["github_url"]
+            commit_sha = upload_result.get("commit_sha", "")
+            await update.message.reply_text(
+                f"✅ *{coding_result.project_name}*\n\n"
+                f"_{coding_result.description}_\n\n"
+                f"🛠 Tech: {tech}\n"
+                f"📁 Files ({len(coding_result.files)}):\n{files_summary}\n\n"
+                f"🔗 [View on GitHub]({github_url})"
+                + (f"\n📌 Commit: `{commit_sha}`" if commit_sha else ""),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            if coding_result.run_instructions:
+                await update.message.reply_text(
+                    f"▶️ *How to run:*\n```\n{coding_result.run_instructions}\n```",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+    else:
+        # Step 2b: No GitHub — send files as Telegram documents
+        await update_status(
+            f"📁 *{coding_result.project_name}* — {len(coding_result.files)} files generated\n"
+            f"📎 Preparing files to send…"
+        )
+        await status_msg.delete()
+
+        await update.message.reply_text(
+            f"✅ *{coding_result.project_name}*\n\n"
+            f"_{coding_result.description}_\n\n"
+            f"🛠 Tech: {tech}\n"
+            f"📁 Files ({len(coding_result.files)}):\n{files_summary}\n\n"
+            f"💡 _Configure GITHUB\\_TOKEN + GITHUB\\_REPO to auto-upload to GitHub_",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        await _send_files_as_documents(update, context, coding_result)
+
+        if coding_result.run_instructions:
+            await update.message.reply_text(
+                f"▶️ *How to run:*\n```\n{coding_result.run_instructions}\n```",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
+
+async def _send_files_as_documents(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    coding_result: Any,
+) -> None:
+    """Send each generated file as a Telegram document attachment."""
+    for project_file in coding_result.files:
+        try:
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT
+            )
+            file_bytes = project_file.content.encode("utf-8")
+            # Use just the filename part for the document name
+            filename = project_file.path.split("/")[-1]
+            await update.message.reply_document(
+                document=InputFile(BytesIO(file_bytes), filename=filename),
+                caption=f"`{project_file.path}`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception as exc:
+            logger.warning("Failed to send file %s: %s", project_file.path, exc)
+
+
 # ---------------------------------------------------------------------------
 # Main message handler — agentic loop
 # ---------------------------------------------------------------------------
@@ -387,6 +550,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("image", cmd_image))
     app.add_handler(CommandHandler("imagine", cmd_image))  # alias
     app.add_handler(CommandHandler("say", cmd_say))
+    app.add_handler(CommandHandler("code", cmd_code))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(callback_model, pattern=r"^model:"))
@@ -409,6 +573,7 @@ async def set_bot_commands(app: Application) -> None:
         BotCommand("image", "Generate an image"),
         BotCommand("imagine", "Generate an image (alias)"),
         BotCommand("say", "Convert text to speech"),
+        BotCommand("code", "Generate a project & upload to GitHub"),
     ]
     await app.bot.set_my_commands(commands)
 

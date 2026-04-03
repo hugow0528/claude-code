@@ -6,15 +6,17 @@
 2. [Prerequisites](#prerequisites)
 3. [Step 1 — Create Your Telegram Bot](#step-1--create-your-telegram-bot)
 4. [Step 2 — Get a Pollinations API Key (optional)](#step-2--get-a-pollinations-api-key-optional)
-5. [Running Locally (Development)](#running-locally-development)
-6. [Deploy on Railway (Recommended)](#deploy-on-railway-recommended)
-7. [Deploy with Docker (Self-Hosted)](#deploy-with-docker-self-hosted)
-8. [Deploy on Render (Free Tier)](#deploy-on-render-free-tier)
-9. [Deploy on Fly.io](#deploy-on-flyio)
-10. [Configuration Reference](#configuration-reference)
-11. [Using the Bot](#using-the-bot)
-12. [Available AI Models](#available-ai-models)
-13. [Troubleshooting](#troubleshooting)
+5. [Step 3 — Set Up GitHub for Code Uploads (optional)](#step-3--set-up-github-for-code-uploads-optional)
+6. [Running Locally (Development)](#running-locally-development)
+7. [Deploy on Railway (Recommended)](#deploy-on-railway-recommended)
+8. [Deploy with Docker (Self-Hosted)](#deploy-with-docker-self-hosted)
+9. [Deploy on Render (Free Tier)](#deploy-on-render-free-tier)
+10. [Deploy on Fly.io](#deploy-on-flyio)
+11. [Configuration Reference](#configuration-reference)
+12. [Using the Bot](#using-the-bot)
+13. [Using the Coding Agent](#using-the-coding-agent)
+14. [Available AI Models](#available-ai-models)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -27,6 +29,7 @@ This is a **fully agentic Telegram bot** powered by [Pollinations AI](https://po
 - 🖼 **Generate images** from text descriptions
 - 🔊 **Speak text aloud** via text-to-speech
 - 🧮 **Calculate** mathematical expressions
+- 💻 **Write & deploy code** — the coding agent generates complete projects and uploads to GitHub
 - 🤔 **Plan and reason** with multi-step tool use
 
 The bot uses an **agentic loop** — if answering your question requires multiple steps (e.g., search → summarise → generate image), it handles that automatically.
@@ -69,6 +72,41 @@ The bot works **without** an API key, but a free key gives you higher rate limit
 2. Sign in with GitHub or Google
 3. Copy your `sk_...` API key
 4. Add it to your `.env` file as `POLLINATIONS_API_KEY`
+
+---
+
+## Step 3 — Set Up GitHub for Code Uploads (optional)
+
+The `/code` command generates complete software projects. If GitHub is configured, projects are automatically committed to your repository. If not, files are sent as Telegram document attachments instead.
+
+### 3a. Create a target repository
+
+1. Go to [github.com/new](https://github.com/new)
+2. Name it something like `ai-projects` or `bot-generated-code`
+3. Set it to **Public** or **Private** (your choice)
+4. **Do NOT** initialise with a README — leave it empty, or add a README (the bot handles both)
+5. Click **Create repository**
+
+### 3b. Create a Personal Access Token
+
+1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
+2. Click **"Generate new token (classic)"**
+3. Give it a name like `telegram-bot`
+4. Select expiration (e.g., 1 year)
+5. Check the scope:
+   - ✅ **`repo`** — for private repos (full access)
+   - ✅ **`public_repo`** — for public repos only (safer)
+6. Click **Generate token**
+7. **Copy the token immediately** — you can't see it again
+
+### 3c. Add to your `.env`
+
+```env
+GITHUB_TOKEN=ghp_yourTokenHere
+GITHUB_REPO=yourusername/ai-projects
+```
+
+> **Railway users:** Set these as environment variables in the Railway dashboard Variables tab.
 
 ---
 
@@ -331,9 +369,12 @@ All settings are in `.env` (or set as environment variables on your platform):
 | `TELEGRAM_BOT_TOKEN` | **required** | Bot token from BotFather |
 | `POLLINATIONS_API_KEY` | _(empty)_ | Pollinations API key for higher rate limits |
 | `DEFAULT_MODEL` | `deepseek` | Default AI text model |
+| `CODING_MODEL` | `qwen-coder` | Model used by the coding agent |
 | `DEFAULT_IMAGE_MODEL` | `flux` | Default image generation model |
 | `MAX_HISTORY_TURNS` | `20` | Conversation turns to keep per user |
 | `MAX_AGENT_ITERATIONS` | `8` | Max tool-use steps per response |
+| `GITHUB_TOKEN` | _(empty)_ | GitHub Personal Access Token (for /code uploads) |
+| `GITHUB_REPO` | _(empty)_ | Target repository e.g. `user/ai-projects` (for /code uploads) |
 | `WEBHOOK_URL` | _(empty)_ | Full webhook URL (enables webhook mode) |
 | `PORT` | `8443` | Port for webhook listener |
 | `ALLOWED_USER_IDS` | _(empty)_ | Comma-separated Telegram user IDs to whitelist |
@@ -359,6 +400,7 @@ Send a message to [@userinfobot](https://t.me/userinfobot) on Telegram. It will 
 | `/image a cat in space` | Generate an image directly |
 | `/imagine a sunset over Tokyo` | Same as `/image` |
 | `/say Hello world` | Convert text to speech |
+| `/code <description>` | Generate a project & upload to GitHub |
 
 ### Just Chat!
 
@@ -368,6 +410,7 @@ You don't need to use commands for most things. Just send messages naturally:
 - *"Draw me a futuristic city at night"* → generates an image
 - *"What is 15% of 847?"* → calculates
 - *"Read this text aloud: Welcome to my bot!"* → generates speech
+- *"Write me a Python script that renames files"* → runs the coding agent
 - *"Explain how blockchain works"* → answers from knowledge
 
 ### Multi-step Agentic Behaviour
@@ -381,6 +424,77 @@ The bot will:
 2. 🤔 Read and summarise the results  
 3. 🖼 Generate an image based on the summary
 4. 💬 Send both the image and a text summary
+
+---
+
+## Using the Coding Agent
+
+The coding agent generates **complete, runnable software projects** — not snippets, but full projects with all files.
+
+### Using `/code`
+
+```
+/code a Python Flask REST API for managing a book collection with SQLite
+```
+
+The bot will:
+1. 🤖 Analyse your request
+2. ⚙️ Generate all project files using a code-specialised AI model (`qwen-coder` by default)
+3. If GitHub is configured: 📤 Upload to `GITHUB_REPO` in a folder named after the project, then share the link
+4. If no GitHub: 📎 Send each file as a Telegram document attachment
+
+### Example prompts
+
+```
+/code a Node.js CLI tool that converts CSV files to JSON format
+/code a Telegram bot in Python that tells dad jokes using the JokeAPI
+/code a Go HTTP server that proxies requests to a backend with auth headers
+/code a simple React todo app with local storage persistence
+/code a Python FastAPI with SQLAlchemy for user authentication
+/code a bash script that backs up a directory to S3 using the AWS CLI
+```
+
+### Natural language (no command needed)
+
+Just say what you want to build:
+- *"Write me a Python web scraper for Hacker News"*
+- *"Create a Discord bot that replies with motivational quotes"*
+- *"Build me a simple REST API in Go"*
+
+The bot recognises coding requests and automatically uses the coding agent.
+
+### What gets generated
+
+Every project always includes:
+- **All source code files** — complete and ready to run
+- **Dependency file** — `requirements.txt`, `package.json`, `go.mod`, etc.
+- **README.md** — what it does, how to install and run it
+
+### GitHub upload structure
+
+When `GITHUB_TOKEN` and `GITHUB_REPO` are set, each project is committed as:
+
+```
+your-repo/
+└── project-name/          ← auto-created folder
+    ├── app.py
+    ├── requirements.txt
+    └── README.md
+```
+
+One commit per project. The link goes directly to the folder on GitHub.
+
+### Choosing a coding model
+
+The coding agent uses `CODING_MODEL` (default: `qwen-coder`). Switch it with:
+
+```bash
+# In .env or Railway variables:
+CODING_MODEL=deepseek       # Great for complex logic
+CODING_MODEL=qwen-coder     # Specialised for code (default)
+CODING_MODEL=openai         # GPT-5 Mini — balanced
+CODING_MODEL=claude-fast    # Claude Haiku — intelligent
+```
 
 ---
 

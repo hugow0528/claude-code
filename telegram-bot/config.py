@@ -50,6 +50,22 @@ class Config:
         default_factory=lambda: int(os.environ.get("PORT", "8443"))
     )
 
+    # Coding agent model — should be a code-specialised model
+    # Options: qwen-coder, deepseek, openai, claude-fast
+    coding_model: str = field(
+        default_factory=lambda: os.environ.get("CODING_MODEL", "qwen-coder")
+    )
+
+    # GitHub integration — required for uploading generated code to GitHub
+    # GITHUB_TOKEN: Personal Access Token with 'repo' (or 'public_repo') scope
+    # GITHUB_REPO:  Target repository, e.g. "username/my-ai-projects"
+    github_token: Optional[str] = field(
+        default_factory=lambda: os.environ.get("GITHUB_TOKEN")
+    )
+    github_repo: Optional[str] = field(
+        default_factory=lambda: os.environ.get("GITHUB_REPO")
+    )
+
     # Optional: restrict bot to specific user IDs (comma-separated)
     allowed_user_ids: list[int] = field(default_factory=list)
 
