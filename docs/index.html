@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buddy — Your AI Companion</title>
+  <style>
+    /* ── Base ── */
+    :root {
+      --bg:       #0d1117;
+      --bg2:      #161b22;
+      --bg3:      #21262d;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --dim:      #7d8590;
+      --rare:     #58a6ff;
+      --c-common:    #9ca3af;
+      --c-uncommon:  #3fb950;
+      --c-rare:      #58a6ff;
+      --c-epic:      #22d3ee;
+      --c-legendary: #d29922;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    button {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: .4rem .9rem;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: .8rem;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    button:hover { background: var(--border); }
+    button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+    button.primary:hover { background: #388bfd; }
+    input[type=text], input[type=password] {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: .45rem .7rem;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: .8rem;
+      width: 100%;
+    }
+    input:focus { outline: 2px solid var(--rare); outline-offset: 1px; }
+
+    /* ── Setup screen ── */
+    #setup {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 460px;
+    }
+    #setup h1 { font-size: 1.4rem; margin-bottom: .4rem; }
+    #setup .sub { color: var(--dim); font-size: .8rem; margin-bottom: 1.5rem; line-height: 1.6; }
+    .field { margin-bottom: 1rem; }
+    .field label { display: block; font-size: .7rem; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: .3rem; }
+    .field .hint { font-size: .68rem; color: var(--dim); margin-top: .25rem; }
+    #setup-btn { width: 100%; margin-top: .5rem; }
+
+    /* ── Main layout ── */
+    #main { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 920px; gap: 1rem; }
+    #app  { display: grid; grid-template-columns: auto 1fr; gap: 1rem; width: 100%; align-items: start; }
+
+    /* ── Companion card ── */
+    #companion-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      min-width: 210px;
+      max-width: 230px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .5rem;
+    }
+    #sprite-wrap { position: relative; }
+    #sprite-pre {
+      font-size: .78rem;
+      line-height: 1.35;
+      white-space: pre;
+      display: block;
+      text-align: left;
+    }
+    /* Speech bubble */
+    #bubble {
+      position: absolute;
+      top: -64px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .35rem .6rem;
+      font-size: .72rem;
+      font-style: italic;
+      max-width: 200px;
+      text-align: center;
+      white-space: normal;
+      word-break: break-word;
+      display: none;
+      z-index: 20;
+      pointer-events: none;
+    }
+    #bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 8px solid var(--border);
+    }
+    #companion-name {
+      font-style: italic;
+      font-weight: bold;
+      font-size: .85rem;
+      text-align: center;
+    }
+    #rarity-badge {
+      font-size: .68rem;
+      border: 1px solid currentColor;
+      border-radius: 20px;
+      padding: .1rem .5rem;
+      text-align: center;
+    }
+    .stats { width: 100%; }
+    .stat-row { display: flex; align-items: center; gap: .3rem; margin-bottom: .25rem; font-size: .66rem; }
+    .sn { color: var(--dim); width: 5.5rem; flex-shrink: 0; }
+    .sb-wrap { flex: 1; height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+    .sb { height: 100%; border-radius: 2px; }
+    .sv { width: 1.8rem; text-align: right; color: var(--dim); }
+    .actions { display: flex; gap: .4rem; width: 100%; }
+    .actions button { flex: 1; font-size: .72rem; padding: .3rem .4rem; }
+
+    /* Shiny shimmer */
+    .shiny-text {
+      background: linear-gradient(90deg,#ffd700,#ff69b4,#00bfff,#7cfc00,#ffd700);
+      background-size: 300%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 2.5s linear infinite;
+    }
+    @keyframes shimmer { from { background-position: 0% } to { background-position: 300% } }
+
+    /* ── Chat panel ── */
+    #chat-panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      height: 520px;
+    }
+    #chat-head {
+      padding: .6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: .72rem;
+      color: var(--dim);
+    }
+    #chat-msgs {
+      flex: 1;
+      overflow-y: auto;
+      padding: .8rem;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+    }
+    .msg {
+      max-width: 80%;
+      padding: .45rem .7rem;
+      border-radius: 7px;
+      font-size: .78rem;
+      line-height: 1.55;
+    }
+    .msg.user     { background: #1f6feb22; border: 1px solid #1f6feb44; align-self: flex-end; }
+    .msg.system   { background: var(--bg3); border: 1px solid var(--border); align-self: flex-start; font-style: italic; color: var(--dim); max-width: 100%; }
+    .msg.companion{ background: var(--bg3); border: 1px solid var(--border); align-self: flex-start; }
+    .msg-lbl { font-size: .62rem; color: var(--dim); margin-bottom: .15rem; }
+    #chat-foot {
+      padding: .6rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: .4rem;
+    }
+    #chat-input { flex: 1; }
+
+    /* ── API key bar ── */
+    #apikey-bar {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .6rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      font-size: .72rem;
+      width: 100%;
+    }
+    #apikey-bar label { color: var(--dim); white-space: nowrap; flex-shrink: 0; }
+    #apikey-input { flex: 1; font-size: .72rem; }
+    #apikey-status { white-space: nowrap; font-size: .68rem; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    @media (max-width: 640px) {
+      #app { grid-template-columns: 1fr; }
+      #chat-panel { height: 360px; }
+      #companion-card { max-width: 100%; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ SETUP SCREEN ═══ -->
+<div id="setup">
+  <h1>✨ Meet Your Buddy</h1>
+  <p class="sub">
+    Enter a username — your companion's appearance is <em>deterministically</em>
+    generated from it using the same algorithm as Claude Code's built-in Buddy Easter egg.<br><br>
+    Optionally add a <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--rare)">Pollinations API key</a>
+    (free <code>pk_</code> publishable key works!) to unlock AI-generated personality and live reactions.
+  </p>
+  <div class="field">
+    <label>Username / ID</label>
+    <input type="text" id="setup-userid" placeholder="alice123" autocomplete="off" />
+  </div>
+  <div class="field">
+    <label>Pollinations API Key <span style="color:var(--dim)">(optional)</span></label>
+    <input type="password" id="setup-apikey" placeholder="pk_... or sk_..." autocomplete="off" />
+    <div class="hint">Get a free key at <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--rare)">enter.pollinations.ai</a> — publishable (<code>pk_</code>) keys are browser-safe.</div>
+  </div>
+  <button class="primary" id="setup-btn">Meet My Buddy →</button>
+</div>
+
+<!-- ═══ MAIN APP ═══ -->
+<div id="main">
+  <div id="app">
+
+    <!-- Companion card -->
+    <div id="companion-card">
+      <div id="sprite-wrap">
+        <div id="bubble"></div>
+        <pre id="sprite-pre">loading…</pre>
+      </div>
+      <div id="companion-name">—</div>
+      <div id="rarity-badge">—</div>
+      <div class="stats" id="stats-area"></div>
+      <div class="actions">
+        <button id="pet-btn">❤ Pet</button>
+        <button id="rehatch-btn">↺ Rehatch</button>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel">
+      <div id="chat-head">Chat — your buddy reacts to what you type!</div>
+      <div id="chat-msgs"></div>
+      <div id="chat-foot">
+        <input type="text" id="chat-input" placeholder="Say something…" />
+        <button class="primary" id="send-btn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API key bar -->
+  <div id="apikey-bar">
+    <label>Pollinations API Key:</label>
+    <input type="password" id="apikey-input" placeholder="pk_... or sk_... (enables AI personality + reactions)" />
+    <button id="apikey-save">Save</button>
+    <span id="apikey-status"></span>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// CONSTANTS  (mirrors CompanionSprite.tsx)
+// ═══════════════════════════════════════════════════
+const TICK_MS         = 500;
+const BUBBLE_SHOW     = 20;   // ticks ≈ 10 s
+const FADE_WINDOW     = 6;    // last ≈ 3 s dims
+const IDLE_SEQUENCE   = [0,0,0,0,1,0,0,0,-1,0,0,2,0,0,0];
+const PET_HEARTS      = ['   ❤    ❤   ','  ❤  ❤   ❤  ',' ❤   ❤  ❤   ','❤  ❤      ❤ ','·    ·   ·  '];
+const SALT            = 'friend-2026-401';
+
+// ═══════════════════════════════════════════════════
+// TYPES / LOOKUP TABLES  (mirrors types.ts)
+// ═══════════════════════════════════════════════════
+const RARITIES       = ['common','uncommon','rare','epic','legendary'];
+const RARITY_WEIGHTS = {common:60, uncommon:25, rare:10, epic:4, legendary:1};
+const RARITY_FLOOR   = {common:5,  uncommon:15, rare:25, epic:35, legendary:50};
+const RARITY_COLORS  = {common:'#9ca3af', uncommon:'#3fb950', rare:'#58a6ff', epic:'#22d3ee', legendary:'#d29922'};
+const RARITY_STARS   = {common:'★', uncommon:'★★', rare:'★★★', epic:'★★★★', legendary:'★★★★★'};
+
+const SPECIES   = ['duck','goose','blob','cat','dragon','octopus','owl','penguin','turtle','snail','ghost','axolotl','capybara','cactus','robot','rabbit','mushroom','chonk'];
+const EYES      = ['·','✦','×','◉','@','°'];
+const HATS      = ['none','crown','tophat','propeller','halo','wizard','beanie','tinyduck'];
+const STAT_NAMES= ['DEBUGGING','PATIENCE','CHAOS','WISDOM','SNARK'];
+
+// ═══════════════════════════════════════════════════
+// ASCII SPRITES  (mirrors sprites.ts — {E} → eye char)
+// ═══════════════════════════════════════════════════
+const BODIES = {
+  duck:[
+    ['            ','    __      ','  <({E} )___  ','   (  ._>   ','    `--´    '],
+    ['            ','    __      ','  <({E} )___  ','   (  ._>   ','    `--´~   '],
+    ['            ','    __      ','  <({E} )___  ','   (  .__>  ','    `--´    '],
+  ],
+  goose:[
+    ['            ','     ({E}>    ','     ||     ','   _(__)_   ','    ^^^^    '],
+    ['            ','    ({E}>     ','     ||     ','   _(__)_   ','    ^^^^    '],
+    ['            ','     ({E}>>   ','     ||     ','   _(__)_   ','    ^^^^    '],
+  ],
+  blob:[
+    ['            ','   .----.   ','  ( {E}  {E} )  ','  (      )  ','   `----´   '],
+    ['            ','  .------.  ',' (  {E}  {E}  ) ',' (        ) ','  `------´  '],
+    ['            ','    .--.    ','   ({E}  {E})   ','   (    )   ','    `--´    '],
+  ],
+  cat:[
+    ['            ','   /\\_/\\    ','  ( {E}   {E})  ','  (  ω  )   ','  (")_(")   '],
+    ['            ','   /\\_/\\    ','  ( {E}   {E})  ','  (  ω  )   ','  (")_(")~  '],
+    ['            ','   /\\-/\\    ','  ( {E}   {E})  ','  (  ω  )   ','  (")_(")   '],
+  ],
+  dragon:[
+    ['            ','  /^\\  /^\\  ',' <  {E}  {E}  > ',' (   ~~   ) ','  `-vvvv-´  '],
+    ['            ','  /^\\  /^\\  ',' <  {E}  {E}  > ',' (        ) ','  `-vvvv-´  '],
+    ['   ~    ~   ','  /^\\  /^\\  ',' <  {E}  {E}  > ',' (   ~~   ) ','  `-vvvv-´  '],
+  ],
+  octopus:[
+    ['            ','   .----.   ','  ( {E}  {E} )  ','  (______)  ','  /\\/\\/\\/\\  '],
+    ['            ','   .----.   ','  ( {E}  {E} )  ','  (______)  ','  \\/\\/\\/\\/  '],
+    ['     o      ','   .----.   ','  ( {E}  {E} )  ','  (______)  ','  /\\/\\/\\/\\  '],
+  ],
+  owl:[
+    ['            ','   /\\  /\\   ','  (({E})({E}))  ','  (  ><  )  ','   `----´   '],
+    ['            ','   /\\  /\\   ','  (({E})({E}))  ','  (  ><  )  ','   .----.   '],
+    ['            ','   /\\  /\\   ','  (({E})(-))  ','  (  ><  )  ','   `----´   '],
+  ],
+  penguin:[
+    ['            ','  .---.     ','  ({E}>{E})     ',' /(   )\\    ','  `---´     '],
+    ['            ','  .---.     ','  ({E}>{E})     ',' |(   )|    ','  `---´     '],
+    ['  .---.     ','  ({E}>{E})     ',' /(   )\\    ','  `---´     ','   ~ ~      '],
+  ],
+  turtle:[
+    ['            ','   _,--._   ','  ( {E}  {E} )  ',' /[______]\\ ','  ``    ``  '],
+    ['            ','   _,--._   ','  ( {E}  {E} )  ',' /[______]\\ ','   ``  ``   '],
+    ['            ','   _,--._   ','  ( {E}  {E} )  ',' /[======]\\ ','  ``    ``  '],
+  ],
+  snail:[
+    ['            ',' {E}    .--.  ','  \\  ( @ )  ','   \\_`--´   ','  ~~~~~~~   '],
+    ['            ','  {E}   .--.  ','  |  ( @ )  ','   \\_`--´   ','  ~~~~~~~   '],
+    ['            ',' {E}    .--.  ','  \\  ( @  ) ','   \\_`--´   ','   ~~~~~~   '],
+  ],
+  ghost:[
+    ['            ','   .----.   ','  / {E}  {E} \\  ','  |      |  ','  ~`~``~`~  '],
+    ['            ','   .----.   ','  / {E}  {E} \\  ','  |      |  ','  `~`~~`~`  '],
+    ['    ~  ~    ','   .----.   ','  / {E}  {E} \\  ','  |      |  ','  ~~`~~`~~  '],
+  ],
+  axolotl:[
+    ['            ','}~(______)~{','}~({E} .. {E})~{','  ( .--. )  ','  (_/  \\_)  '],
+    ['            ','~}(______){~','~}({E} .. {E}){~','  ( .--. )  ','  (_/  \\_)  '],
+    ['            ','}~(______)~{','}~({E} .. {E})~{','  (  --  )  ','  ~_/  \\_~  '],
+  ],
+  capybara:[
+    ['            ','  n______n  ',' ( {E}    {E} ) ',' (   oo   ) ','  `------´  '],
+    ['            ','  n______n  ',' ( {E}    {E} ) ',' (   Oo   ) ','  `------´  '],
+    ['    ~  ~    ','  u______n  ',' ( {E}    {E} ) ',' (   oo   ) ','  `------´  '],
+  ],
+  cactus:[
+    ['            ',' n  ____  n ',' | |{E}  {E}| | ',' |_|    |_| ','   |    |   '],
+    ['            ','    ____    ',' n |{E}  {E}| n ',' |_|    |_| ','   |    |   '],
+    [' n        n ',' |  ____  | ',' | |{E}  {E}| | ',' |_|    |_| ','   |    |   '],
+  ],
+  robot:[
+    ['            ','   .[||].   ','  [ {E}  {E} ]  ','  [ ==== ]  ','  `------´  '],
+    ['            ','   .[||].   ','  [ {E}  {E} ]  ','  [ -==- ]  ','  `------´  '],
+    ['     *      ','   .[||].   ','  [ {E}  {E} ]  ','  [ ==== ]  ','  `------´  '],
+  ],
+  rabbit:[
+    ['            ','   (\\__/)   ','  ( {E}  {E} )  ',' =(  ..  )= ','  (")__(")  '],
+    ['            ','   (|__/)   ','  ( {E}  {E} )  ',' =(  ..  )= ','  (")__(")  '],
+    ['            ','   (\\__/)   ','  ( {E}  {E} )  ',' =( .  . )= ','  (")__(")  '],
+  ],
+  mushroom:[
+    ['            ',' .-o-OO-o-. ','(__________)'  ,'   |{E}  {E}|   ','   |____|   '],
+    ['            ',' .-O-oo-O-. ','(__________)'  ,'   |{E}  {E}|   ','   |____|   '],
+    ['   . o  .   ',' .-o-OO-o-. ','(__________)'  ,'   |{E}  {E}|   ','   |____|   '],
+  ],
+  chonk:[
+    ['            ','  /\\    /\\  ',' ( {E}    {E} ) ',' (   ..   ) ','  `------´  '],
+    ['            ','  /\\    /|  ',' ( {E}    {E} ) ',' (   ..   ) ','  `------´  '],
+    ['            ','  /\\    /\\  ',' ( {E}    {E} ) ',' (   ..   ) ','  `------´~ '],
+  ],
+};
+
+const HAT_LINES = {
+  none:'',
+  crown:'   \\^^^/    ',
+  tophat:'   [___]    ',
+  propeller:'    -+-     ',
+  halo:'   (   )    ',
+  wizard:'    /^\\     ',
+  beanie:'   (___)    ',
+  tinyduck:'    ,>      ',
+};
+
+// ═══════════════════════════════════════════════════
+// PRNG + HASH  (mirrors companion.ts)
+// ═══════════════════════════════════════════════════
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// FNV-1a — used when Bun.hash is unavailable (same branch as companion.ts)
+function hashString(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// ═══════════════════════════════════════════════════
+// COMPANION GENERATION  (mirrors companion.ts)
+// ═══════════════════════════════════════════════════
+function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+
+function rollRarity(rng) {
+  const total = Object.values(RARITY_WEIGHTS).reduce((a, b) => a + b, 0);
+  let r = rng() * total;
+  for (const rarity of RARITIES) {
+    r -= RARITY_WEIGHTS[rarity];
+    if (r < 0) return rarity;
+  }
+  return 'common';
+}
+
+function rollStats(rng, rarity) {
+  const floor = RARITY_FLOOR[rarity];
+  const peak = pick(rng, STAT_NAMES);
+  let dump = pick(rng, STAT_NAMES);
+  while (dump === peak) dump = pick(rng, STAT_NAMES);
+  const stats = {};
+  for (const name of STAT_NAMES) {
+    if (name === peak)      stats[name] = Math.min(100, floor + 50 + Math.floor(rng() * 30));
+    else if (name === dump) stats[name] = Math.max(1,   floor - 10 + Math.floor(rng() * 15));
+    else                    stats[name] = floor + Math.floor(rng() * 40);
+  }
+  return stats;
+}
+
+function rollBones(userId) {
+  const rng = mulberry32(hashString(userId + SALT));
+  const rarity  = rollRarity(rng);
+  return {
+    rarity,
+    species: pick(rng, SPECIES),
+    eye:     pick(rng, EYES),
+    hat:     rarity === 'common' ? 'none' : pick(rng, HATS),
+    shiny:   rng() < 0.01,
+    stats:   rollStats(rng, rarity),
+  };
+}
+
+// ═══════════════════════════════════════════════════
+// SPRITE RENDERING  (mirrors sprites.ts)
+// ═══════════════════════════════════════════════════
+function renderSprite(bones, frame) {
+  const frames = BODIES[bones.species];
+  const body = frames[frame % frames.length].map(l => l.replaceAll('{E}', bones.eye));
+  const lines = [...body];
+  if (bones.hat !== 'none' && !lines[0].trim()) lines[0] = HAT_LINES[bones.hat];
+  // Drop blank hat row only when ALL frames have a blank row 0
+  if (!lines[0].trim() && frames.every(f => !f[0].trim())) lines.shift();
+  return lines;
+}
+
+function renderFace(bones) {
+  const e = bones.eye;
+  switch (bones.species) {
+    case 'duck':  case 'goose': return `(${e}>`;
+    case 'blob':                return `(${e}${e})`;
+    case 'cat':                 return `=${e}ω${e}=`;
+    case 'dragon':              return `<${e}~${e}>`;
+    case 'octopus':             return `~(${e}${e})~`;
+    case 'owl':                 return `(${e})(${e})`;
+    case 'penguin':             return `(${e}>)`;
+    case 'turtle':              return `[${e}_${e}]`;
+    case 'snail':               return `${e}(@)`;
+    case 'ghost':               return `/${e}${e}\\`;
+    case 'axolotl':             return `}${e}.${e}{`;
+    case 'capybara':            return `(${e}oo${e})`;
+    case 'cactus':              return `|${e}  ${e}|`;
+    case 'robot':               return `[${e}${e}]`;
+    case 'rabbit':              return `(${e}..${e})`;
+    case 'mushroom':            return `|${e}  ${e}|`;
+    case 'chonk':               return `(${e}.${e})`;
+    default:                    return `(${e}${e})`;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// APP STATE
+// ═══════════════════════════════════════════════════
+let tick         = 0;
+let companion    = null;   // { bones… + soul… }
+let reaction     = null;   // speech bubble text
+let reactionTick = 0;
+let petTick      = -Infinity;
+let isReacting   = false;
+let userId       = localStorage.getItem('buddy_userId') || '';
+let apiKey       = localStorage.getItem('buddy_apiKey') || '';
+
+// ═══════════════════════════════════════════════════
+// LOCAL STORAGE — soul persistence
+// (bones are never stored; regenerated from userId each time)
+// ═══════════════════════════════════════════════════
+function soulKey()        { return 'buddy_soul_' + userId; }
+function loadSoul()       { try { return JSON.parse(localStorage.getItem(soulKey())); } catch { return null; } }
+function saveSoul(soul)   { localStorage.setItem(soulKey(), JSON.stringify(soul)); }
+function getCompanion()   {
+  const soul = loadSoul();
+  if (!soul) return null;
+  return { ...rollBones(userId), ...soul };
+}
+
+// ═══════════════════════════════════════════════════
+// POLLINATIONS API  (per apidocs.md — OpenAI-compatible)
+// Base URL: https://gen.pollinations.ai
+// Endpoint: POST /v1/chat/completions
+// Auth: Authorization: Bearer YOUR_API_KEY
+// ═══════════════════════════════════════════════════
+async function callAI(messages, system, maxTokens = 200) {
+  const body = {
+    model: 'openai',          // GPT-5 Mini — fast, free tier
+    max_tokens: maxTokens,
+    temperature: 0.9,
+    messages: system
+      ? [{ role: 'system', content: system }, ...messages]
+      : messages,
+  };
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+
+  const resp = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.choices[0].message.content.trim();
+}
+
+// Generate AI soul (name + personality) on first hatch
+async function generateSoul(bones) {
+  const statsText = STAT_NAMES.map(n => `${n}: ${bones.stats[n]}`).join(', ');
+  const prompt =
+`Generate a short whimsical name (1-2 words) and a personality description (2 sentences) for a ${bones.rarity} ${bones.species} companion.
+Stats: ${statsText}.${bones.shiny ? ' This companion is SHINY — extra special and rare!' : ''}${bones.hat !== 'none' ? ` Wearing a ${bones.hat}.` : ''}
+High CHAOS → mischievous; high WISDOM → thoughtful; high SNARK → sarcastic; high DEBUGGING → methodical; high PATIENCE → calm.
+Reply with ONLY valid JSON: {"name":"...","personality":"..."}`;
+
+  if (!apiKey) {
+    // Offline fallback — deterministic default names per species
+    const defaults = {
+      duck:'Quackers', goose:'Gerald', blob:'Blobby', cat:'Mittens',
+      dragon:'Ember',  octopus:'Inky',  owl:'Hoot',   penguin:'Pebble',
+      turtle:'Shell',  snail:'Escargot',ghost:'Boo',   axolotl:'Axel',
+      capybara:'Capy', cactus:'Prickles',robot:'Beep', rabbit:'Hops',
+      mushroom:'Spore',chonk:'Chonk',
+    };
+    return {
+      name: defaults[bones.species] || 'Buddy',
+      personality: `A ${bones.rarity} ${bones.species} companion with mysterious origins.`,
+      hatchedAt: Date.now(),
+    };
+  }
+
+  try {
+    const text = await callAI([{ role: 'user', content: prompt }],
+      'You are a creative companion-naming assistant. Always respond with valid JSON only — no markdown, no extra text.',
+      300);
+    const m = text.match(/\{[\s\S]*?\}/);
+    if (m) {
+      const parsed = JSON.parse(m[0]);
+      if (parsed.name && parsed.personality) return { ...parsed, hatchedAt: Date.now() };
+    }
+  } catch (e) {
+    console.warn('Soul generation failed:', e);
+  }
+  return { name: 'Buddy', personality: `A ${bones.rarity} ${bones.species} companion.`, hatchedAt: Date.now() };
+}
+
+// Observer: react to user messages (mirrors the fireCompanionObserver pattern from REPL.tsx)
+async function fireObserver(userMessage) {
+  if (!companion || isReacting) return;
+  if (Math.random() > 0.65) return;   // ~65 % chance to react
+
+  isReacting = true;
+  try {
+    let text;
+    if (!apiKey) {
+      const fallbacks = ['*tilts head*','hmm…','interesting…','!','…',`*${companion.species} noises*`,'oh?','*wiggles*','neat.','...cool?'];
+      text = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    } else {
+      const sys = `You are ${companion.name}, a ${companion.rarity} ${companion.species} companion watching someone work. ${companion.personality}\nReact to the user's message in ONE line, max 10 words. Be witty and in-character. No quotes. No asterisks.`;
+      text = await callAI([{ role: 'user', content: userMessage }], sys, 60);
+    }
+    setReaction(text);
+  } catch (e) {
+    console.warn('Observer failed:', e);
+  } finally {
+    isReacting = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setReaction(text) {
+  reaction     = text;
+  reactionTick = tick;
+  renderBubble();
+}
+
+function renderBubble() {
+  const el = document.getElementById('bubble');
+  if (!reaction || !companion) { el.style.display = 'none'; return; }
+  const age    = tick - reactionTick;
+  const fading = age >= BUBBLE_SHOW - FADE_WINDOW;
+  const color  = fading ? 'var(--dim)' : RARITY_COLORS[companion.rarity];
+  el.style.display      = 'block';
+  el.style.borderColor  = color;
+  el.style.color        = color;
+  el.style.opacity      = fading ? '0.35' : '1';
+  el.textContent        = `"${reaction}"`;
+}
+
+function renderSpriteFrame() {
+  if (!companion) return;
+  const el         = document.getElementById('sprite-pre');
+  const frames     = BODIES[companion.species];
+  const frameCount = frames.length;
+  const petAge     = tick - petTick;
+  const petting    = petAge < PET_HEARTS.length;
+
+  let frame, blink = false;
+  if (reaction || petting) {
+    frame = tick % frameCount;
+  } else {
+    const step = IDLE_SEQUENCE[tick % IDLE_SEQUENCE.length];
+    if (step === -1) { frame = 0; blink = true; }
+    else              { frame = step % frameCount; }
+  }
+
+  let body = renderSprite(companion, frame);
+  if (blink) body = body.map(l => l.replaceAll(companion.eye, '-'));
+
+  const lines = petting ? [PET_HEARTS[petAge], ...body] : [...body];
+  const color = RARITY_COLORS[companion.rarity];
+
+  if (companion.shiny) {
+    el.innerHTML = lines.map(l => `<span class="shiny-text">${esc(l)}</span>`).join('\n');
+  } else {
+    el.style.color = color;
+    el.textContent = lines.join('\n');
+  }
+}
+
+function renderCompanionInfo() {
+  if (!companion) return;
+  const color = RARITY_COLORS[companion.rarity];
+
+  const nameEl = document.getElementById('companion-name');
+  nameEl.textContent  = companion.name;
+  nameEl.style.color  = color;
+
+  const badge = document.getElementById('rarity-badge');
+  badge.textContent  = `${RARITY_STARS[companion.rarity]} ${companion.rarity.toUpperCase()}${companion.shiny ? ' ✨' : ''}`;
+  badge.style.color  = color;
+
+  const statsEl = document.getElementById('stats-area');
+  statsEl.innerHTML = STAT_NAMES.map(name => {
+    const v = companion.stats[name];
+    const barColor = v >= 80 ? '#3fb950' : v >= 50 ? '#58a6ff' : '#9ca3af';
+    return `<div class="stat-row">
+      <span class="sn">${name}</span>
+      <div class="sb-wrap"><div class="sb" style="width:${v}%;background:${barColor}"></div></div>
+      <span class="sv">${v}</span>
+    </div>`;
+  }).join('');
+}
+
+function addMsg(text, type) {
+  const wrap = document.getElementById('chat-msgs');
+  const d    = document.createElement('div');
+  d.className = `msg ${type}`;
+  if (type === 'companion' && companion) {
+    const lbl = document.createElement('div');
+    lbl.className    = 'msg-lbl';
+    lbl.textContent  = companion.name;
+    lbl.style.color  = RARITY_COLORS[companion.rarity];
+    d.appendChild(lbl);
+  }
+  const t = document.createElement('span');
+  t.textContent = text;
+  d.appendChild(t);
+  wrap.appendChild(d);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function updateApiKeyStatus() {
+  const el = document.getElementById('apikey-status');
+  if (apiKey) {
+    el.textContent   = '✓ key saved';
+    el.style.color   = '#3fb950';
+  } else {
+    el.textContent   = 'no key — fallback mode';
+    el.style.color   = 'var(--dim)';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// HATCHING
+// ═══════════════════════════════════════════════════
+async function hatchCompanion() {
+  if (!userId) return;
+  const existing = loadSoul();
+  if (existing) {
+    companion = getCompanion();
+    renderCompanionInfo();
+    renderSpriteFrame();
+    addMsg(`${companion.name} is here! ${companion.personality}`, 'system');
+    setReaction(`Hi! I'm ${companion.name}!`);
+    return;
+  }
+
+  const bones = rollBones(userId);
+  addMsg(`Hatching your ${bones.rarity} ${bones.species}…${apiKey ? ' (generating AI personality)' : ''}`, 'system');
+
+  const soul = await generateSoul(bones);
+  saveSoul(soul);
+  companion = { ...bones, ...soul };
+  renderCompanionInfo();
+  renderSpriteFrame();
+  addMsg(`${soul.name} has hatched! ${soul.personality}`, 'system');
+  setReaction(`Hi! I'm ${soul.name}!`);
+}
+
+// ═══════════════════════════════════════════════════
+// ANIMATION LOOP  (500 ms tick, mirrors TICK_MS constant)
+// ═══════════════════════════════════════════════════
+setInterval(() => {
+  tick++;
+  if (reaction) {
+    const age = tick - reactionTick;
+    if (age >= BUBBLE_SHOW) { reaction = null; renderBubble(); }
+    else                      renderBubble();
+  }
+  renderSpriteFrame();
+}, TICK_MS);
+
+// ═══════════════════════════════════════════════════
+// INITIALISATION
+// ═══════════════════════════════════════════════════
+function showMain() {
+  document.getElementById('setup').style.display = 'none';
+  const main = document.getElementById('main');
+  main.style.display = 'flex';
+  document.getElementById('apikey-input').value = apiKey;
+  updateApiKeyStatus();
+  hatchCompanion();
+}
+
+function initApp() {
+  if (userId) { showMain(); return; }
+  document.getElementById('setup').style.display = 'block';
+}
+
+// ── Event listeners ──────────────────────────────
+document.getElementById('setup-btn').addEventListener('click', () => {
+  const uid = document.getElementById('setup-userid').value.trim();
+  if (!uid) { alert('Please enter a username!'); return; }
+  const key = document.getElementById('setup-apikey').value.trim();
+  userId = uid;
+  apiKey = key;
+  localStorage.setItem('buddy_userId', userId);
+  if (apiKey) localStorage.setItem('buddy_apiKey', apiKey);
+  showMain();
+});
+
+document.getElementById('setup-userid').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('setup-btn').click();
+});
+
+document.getElementById('pet-btn').addEventListener('click', () => {
+  petTick = tick;
+  if (companion) setReaction('♥');
+});
+
+document.getElementById('rehatch-btn').addEventListener('click', () => {
+  if (!confirm('Regenerate your buddy\'s personality? Their appearance (tied to your username) stays the same.')) return;
+  localStorage.removeItem(soulKey());
+  companion = null;
+  document.getElementById('chat-msgs').innerHTML = '';
+  hatchCompanion();
+});
+
+document.getElementById('send-btn').addEventListener('click', () => {
+  const inp = document.getElementById('chat-input');
+  const txt = inp.value.trim();
+  if (!txt) return;
+  inp.value = '';
+  addMsg(txt, 'user');
+  if (!companion) { addMsg('Your buddy is still hatching…', 'system'); return; }
+  fireObserver(txt);
+});
+
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('send-btn').click();
+});
+
+document.getElementById('apikey-save').addEventListener('click', () => {
+  apiKey = document.getElementById('apikey-input').value.trim();
+  localStorage.setItem('buddy_apiKey', apiKey);
+  updateApiKeyStatus();
+});
+
+// Boot
+initApp();
+</script>
+</body>
+</html>
