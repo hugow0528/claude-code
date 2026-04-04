@@ -440,7 +440,7 @@ function mulberry32(seed) {
   };
 }
 
-// FNV-1a — used when Bun.hash is unavailable (same branch as companion.ts)
+// FNV-1a — mirrors the non-Bun fallback hash logic from the original TypeScript implementation
 function hashString(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
